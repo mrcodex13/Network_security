@@ -10,8 +10,8 @@ from typing import List
 
 def get_requirements()->List[str]:
     """
-    Thiss function will return list of requirements
-    
+    This function will return list of requirements
+     
     """
     requirement_lst:List[str]=[]
     try:
@@ -28,12 +28,12 @@ def get_requirements()->List[str]:
         print("requirements.txt file not found")
 
     return requirement_lst
-
+# "Package everything so pip can install my project."
 setup(
     name="NetworkSecurity",
     version="0.0.1",
-    author="Krish Naik",
-    author_email="krishnaik06@gmail.com",
+    author="Kartik singh",
+    author_email="24ir10ka34@mitsgwl.ac.in",
     packages=find_packages(),
     install_requires=get_requirements()
 )
