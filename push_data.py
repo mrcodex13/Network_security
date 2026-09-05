@@ -1,11 +1,17 @@
 import os
 import sys
 import json
+import pymongo
+import certifi
+import pandas as pd
 
 from dotenv import load_dotenv
-load_dotenv()
 
-MONGO_DB_URL=os.getenv("MONGO_DB_URL")
+from networksecurity.exception.exception import NetworkSecurityException
+from networksecurity.logging.logger import logging
+
+load_dotenv()
+MONGO_DB_URL=os.getenv("MONGODB_URI")
 print(MONGO_DB_URL)
 
 import certifi
@@ -32,31 +38,39 @@ class NetworkDataExtract():
             return records
         except Exception as e:
             raise NetworkSecurityException(e,sys)
-        
-    def insert_data_mongodb(self,records,database,collection):
-        try:
-            self.database=database
-            self.collection=collection
-            self.records=records
 
-            self.mongo_client=pymongo.MongoClient(MONGO_DB_URL)
-            self.database = self.mongo_client[self.database]
-            
-            self.collection=self.database[self.collection]
-            self.collection.insert_many(self.records)
-            return(len(self.records))
+    def insert_data_mongodb(self, records, database, collection):
+        try:
+            self.mongo_client = pymongo.MongoClient(
+                MONGO_DB_URL,
+                tls=True,
+                tlsCAFile=certifi.where(),
+                serverSelectionTimeoutMS=30000
+            )
+
+        # Test connection
+            self.mongo_client.admin.command("ping")
+            print("MongoDB connection successful")
+
+            # Select database and collection
+            self.database = self.mongo_client[database]
+            self.collection = self.database[collection]
+
+            # Insert records
+            self.collection.insert_many(records)
+
+            return len(records)
+
         except Exception as e:
-            raise NetworkSecurityException(e,sys)
+            raise NetworkSecurityException(e, sys)    
         
 if __name__=='__main__':
-    FILE_PATH="Network_Data\phisingData.csv"
-    DATABASE="KRISHAI"
+    FILE_PATH="Network_Data/phisingData.csv"
+    DATABASE="Kartik"
     Collection="NetworkData"
     networkobj=NetworkDataExtract()
     records=networkobj.csv_to_json_convertor(file_path=FILE_PATH)
-    print(records)
+
+    print("all records are collected and ready to insert into mongodb")
     no_of_records=networkobj.insert_data_mongodb(records,DATABASE,Collection)
-    print(no_of_records)
-        
-
-
+    print( "Total records inserted:", no_of_records)
