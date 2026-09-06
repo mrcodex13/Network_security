@@ -28,23 +28,30 @@ class DataValidation:
         
     def validate_number_of_columns(self,dataframe:pd.DataFrame)->bool:
         try:
-            number_of_columns=len(self._schema_config)
+            expected_columns = self._schema_config.get("columns", [])
+            expected_column_names = [
+                next(iter(column)) if isinstance(column, dict) else str(column).split(":", 1)[0].strip()
+                for column in expected_columns
+            ]
+            number_of_columns = len(expected_column_names)
             logging.info(f"Required number of columns:{number_of_columns}")
             logging.info(f"Data frame has columns:{len(dataframe.columns)}")
-            if len(dataframe.columns)==number_of_columns:
-                return True
-            return False
+            return set(dataframe.columns) == set(expected_column_names)
         except Exception as e:
             raise NetworkSecurityException(e,sys)
         
     def detect_dataset_drift(self,base_df,current_df,threshold=0.05)->bool:
         try:
-            status=True
+            status = True
             report={}
             for column in base_df.columns:
+                if column not in current_df.columns:
+                    status = False
+                    report[column] = {"p_value": 0.0, "drift_status": True}
+                    continue
                 d1=base_df[column]
                 d2=current_df[column]
-                is_same_dist=ks_2samp(d1,d2)
+                is_same_dist=ks_2samp(d1.dropna(),d2.dropna())
                 if threshold<=is_same_dist.pvalue:
                     is_found=False
                 else:
@@ -61,6 +68,7 @@ class DataValidation:
             dir_path = os.path.dirname(drift_report_file_path)
             os.makedirs(dir_path,exist_ok=True)
             write_yaml_file(file_path=drift_report_file_path,content=report)
+            return status
 
         except Exception as e:
             raise NetworkSecurityException(e,sys)
@@ -77,15 +85,15 @@ class DataValidation:
             
             ## validate number of columns
 
-            status=self.validate_number_of_columns(dataframe=train_dataframe)
-            if not status:
-                error_message=f"Train dataframe does not contain all columns.\n"
-            status = self.validate_number_of_columns(dataframe=test_dataframe)
-            if not status:
-                error_message=f"Test dataframe does not contain all columns.\n"   
+            train_columns_valid = self.validate_number_of_columns(dataframe=train_dataframe)
+            test_columns_valid = self.validate_number_of_columns(dataframe=test_dataframe)
+            if not train_columns_valid or not test_columns_valid:
+                raise ValueError("Train and test data must contain exactly the schema columns.")
 
             ## lets check datadrift
-            status=self.detect_dataset_drift(base_df=train_dataframe,current_df=test_dataframe)
+            drift_free = self.detect_dataset_drift(
+                base_df=train_dataframe, current_df=test_dataframe
+            )
             dir_path=os.path.dirname(self.data_validation_config.valid_train_file_path)
             os.makedirs(dir_path,exist_ok=True)
 
@@ -99,9 +107,9 @@ class DataValidation:
             )
             
             data_validation_artifact = DataValidationArtifact(
-                validation_status=status,
-                valid_train_file_path=self.data_ingestion_artifact.trained_file_path,
-                valid_test_file_path=self.data_ingestion_artifact.test_file_path,
+                validation_status=drift_free,
+                valid_train_file_path=self.data_validation_config.valid_train_file_path,
+                valid_test_file_path=self.data_validation_config.valid_test_file_path,
                 invalid_train_file_path=None,
                 invalid_test_file_path=None,
                 drift_report_file_path=self.data_validation_config.drift_report_file_path,
@@ -109,6 +117,4 @@ class DataValidation:
             return data_validation_artifact
         except Exception as e:
             raise NetworkSecurityException(e,sys)
-
-
 

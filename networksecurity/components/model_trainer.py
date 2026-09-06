@@ -27,13 +27,9 @@ import mlflow
 from urllib.parse import urlparse
 
 import dagshub
-#dagshub.init(repo_owner='krishnaik06', repo_name='networksecurity', mlflow=True)
+from dotenv import load_dotenv
 
-os.environ["MLFLOW_TRACKING_URI"]="https://dagshub.com/krishnaik06/networksecurity.mlflow"
-os.environ["MLFLOW_TRACKING_USERNAME"]="krishnaik06"
-os.environ["MLFLOW_TRACKING_PASSWORD"]="7104284f1bb44ece21e0e2adb4e36a250ae3251f"
-
-
+load_dotenv()
 
 
 
@@ -46,7 +42,13 @@ class ModelTrainer:
             raise NetworkSecurityException(e,sys)
         
     def track_mlflow(self,best_model,classificationmetric):
-        mlflow.set_registry_uri("https://dagshub.com/krishnaik06/networksecurity.mlflow")
+        tracking_uri = os.getenv("MLFLOW_TRACKING_URI")
+        if not tracking_uri:
+            logging.info("MLflow tracking is disabled because MLFLOW_TRACKING_URI is not set.")
+            return
+
+        mlflow.set_tracking_uri(tracking_uri)
+        mlflow.set_registry_uri(os.getenv("MLFLOW_REGISTRY_URI", tracking_uri))
         tracking_url_type_store = urlparse(mlflow.get_tracking_uri()).scheme
         with mlflow.start_run():
             f1_score=classificationmetric.f1_score
@@ -59,16 +61,12 @@ class ModelTrainer:
             mlflow.log_metric("precision",precision_score)
             mlflow.log_metric("recall_score",recall_score)
             mlflow.sklearn.log_model(best_model,"model")
-            # Model registry does not work with file store
-            if tracking_url_type_store != "file":
-
-                # Register the model
-                # There are other ways to use the Model Registry, which depends on the use case,
-                # please refer to the doc for more information:
-                # https://mlflow.org/docs/latest/model-registry.html#api-workflow
-                mlflow.sklearn.log_model(best_model, "model", registered_model_name=best_model)
-            else:
-                mlflow.sklearn.log_model(best_model, "model")
+            registered_model_name = os.getenv("MLFLOW_REGISTERED_MODEL_NAME")
+            if tracking_url_type_store != "file" and registered_model_name:
+                mlflow.register_model(
+                    f"runs:/{mlflow.active_run().info.run_id}/model",
+                    registered_model_name,
+                )
 
 
         

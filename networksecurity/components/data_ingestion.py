@@ -11,12 +11,12 @@ import sys
 import numpy as np
 import pandas as pd
 import pymongo
-from typing import List
 from sklearn.model_selection import train_test_split
 from dotenv import load_dotenv
+import certifi
 load_dotenv()
 
-MONGO_DB_URL=os.getenv("MONGO_DB_URL")
+MONGO_DB_URL = os.getenv("MONGODB_URI") or os.getenv("MONGO_DB_URL")
 
 
 class DataIngestion:
@@ -33,17 +33,33 @@ class DataIngestion:
         try:
             database_name=self.data_ingestion_config.database_name
             collection_name=self.data_ingestion_config.collection_name
-            self.mongo_client=pymongo.MongoClient(MONGO_DB_URL)
+            if not MONGO_DB_URL:
+                raise ValueError(
+                    "MongoDB connection string is missing. Set MONGODB_URI in the environment."
+                )
+            self.mongo_client = pymongo.MongoClient(
+                MONGO_DB_URL,
+                tlsCAFile=certifi.where(),
+                serverSelectionTimeoutMS=10000,
+            )
+            self.mongo_client.admin.command("ping")
             collection=self.mongo_client[database_name][collection_name]
 
             df=pd.DataFrame(list(collection.find()))
+            if df.empty:
+                raise ValueError(
+                    f"MongoDB collection '{database_name}.{collection_name}' is empty."
+                )
             if "_id" in df.columns.to_list():
                 df=df.drop(columns=["_id"],axis=1)
             
             df.replace({"na":np.nan},inplace=True)
             return df
         except Exception as e:
-            raise NetworkSecurityException
+            raise NetworkSecurityException(e, sys) from e
+        finally:
+            if hasattr(self, "mongo_client"):
+                self.mongo_client.close()
         
     def export_data_into_feature_store(self,dataframe: pd.DataFrame):
         try:
@@ -82,6 +98,7 @@ class DataIngestion:
                 self.data_ingestion_config.testing_file_path, index=False, header=True
             )
             logging.info(f"Exported train and test file path.")
+            print(f"Exported train and test file path.")
 
             
         except Exception as e:
@@ -98,4 +115,4 @@ class DataIngestion:
             return dataingestionartifact
 
         except Exception as e:
-            raise NetworkSecurityException
+            raise NetworkSecurityException(e, sys) from e
